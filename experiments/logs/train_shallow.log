@@ -1,0 +1,40 @@
+2025-11-23 23:18:53,685 | root | INFO | Logging initialized. Writing to: experiments\logs\train_shallow.log
+2025-11-23 23:18:53,685 | train_shallow | INFO | Loading config from: configs/main_cnn_template.yaml
+2025-11-23 23:18:53,690 | src.utils.seed | INFO | Setting global seed to 42
+2025-11-23 23:18:53,692 | src.utils.seed | INFO | PyTorch cuDNN set to deterministic mode
+2025-11-23 23:18:53,692 | train_shallow | INFO | Seed set to 42
+2025-11-23 23:18:53,693 | train_shallow | INFO | Using device: cuda
+2025-11-23 23:18:55,251 | train_shallow | INFO | ShallowCNN:
+ShallowCNN(
+  (features): Sequential(
+    (0): Conv2d(1, 32, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+    (1): BatchNorm2d(32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (2): ReLU(inplace=True)
+    (3): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+    (4): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+    (5): BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (6): ReLU(inplace=True)
+    (7): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+    (8): Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+    (9): BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True)
+    (10): ReLU(inplace=True)
+    (11): MaxPool2d(kernel_size=2, stride=2, padding=0, dilation=1, ceil_mode=False)
+  )
+  (classifier): Sequential(
+    (0): Flatten(start_dim=1, end_dim=-1)
+    (1): Linear(in_features=32768, out_features=128, bias=True)
+    (2): ReLU(inplace=True)
+    (3): Dropout(p=0.5, inplace=False)
+    (4): Linear(in_features=128, out_features=7, bias=True)
+  )
+)
+2025-11-23 23:18:55,252 | train_shallow | INFO | Computing class weights from training set...
+2025-11-23 23:19:31,799 | train_shallow | INFO | Class counts-derived weights: [0.827241063117981, 0.5703387260437012, 0.8435758352279663, 1.281175136566162, 1.0009962320327759, 9.369638442993164, 1.0350652933120728]
+2025-11-23 23:19:31,801 | train_shallow | INFO | Using Adam optimizer (lr=0.001, weight_decay=0.0001)
+2025-11-23 23:19:31,801 | train_shallow | INFO | Starting training for 3 epochs (early stopping patience=15)
+2025-11-23 23:20:45,382 | train_shallow | INFO | Epoch 001/3 | Train: loss=2.2923, acc=0.1879, macroF1=0.1192 | Val: loss=1.9453, acc=0.2504, macroF1=0.0572
+2025-11-23 23:20:45,432 | train_shallow | INFO | New best val_macro_f1=0.0572 at epoch 1, checkpoint saved to experiments\checkpoints\shallow_best.pt
+2025-11-23 23:21:53,641 | train_shallow | INFO | Epoch 002/3 | Train: loss=1.9454, acc=0.2365, macroF1=0.0736 | Val: loss=1.9450, acc=0.2504, macroF1=0.0572
+2025-11-23 23:23:02,882 | train_shallow | INFO | Epoch 003/3 | Train: loss=1.9454, acc=0.1980, macroF1=0.0797 | Val: loss=1.9449, acc=0.2504, macroF1=0.0572
+2025-11-23 23:23:02,883 | train_shallow | INFO | Loading best checkpoint from experiments\checkpoints\shallow_best.pt for TEST evaluation.
+2025-11-23 23:23:32,454 | train_shallow | INFO | [TEST] loss=1.9454, acc=0.2506, macroF1=0.0572

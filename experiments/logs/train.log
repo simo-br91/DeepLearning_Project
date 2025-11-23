@@ -128,3 +128,25 @@ MainCNN(
 2025-11-23 22:46:02,816 | train | INFO | No improvement in best metric for 2 epoch(s). Best so far: 0.0946 at epoch 1
 2025-11-23 22:47:12,107 | train | INFO | Epoch 004/150 [69.3s] Train: loss=1.9466, acc=0.1652, macroF1=0.1527 | Val: loss=1.9253, acc=0.1887, macroF1=0.1329
 2025-11-23 22:47:12,108 | train | INFO | New best model at epoch 4 (val_macro_f1=0.1329). Saving checkpoint to experiments\checkpoints\best_model.pt
+2025-11-23 22:48:19,889 | train | INFO | Epoch 005/150 [67.8s] Train: loss=1.9380, acc=0.1702, macroF1=0.1546 | Val: loss=1.9259, acc=0.1795, macroF1=0.1038
+2025-11-23 22:48:19,891 | train | INFO | No improvement in best metric for 1 epoch(s). Best so far: 0.1329 at epoch 4
+2025-11-23 22:49:28,677 | train | INFO | Epoch 006/150 [68.8s] Train: loss=1.9343, acc=0.1715, macroF1=0.1534 | Val: loss=1.9183, acc=0.1982, macroF1=0.1400
+2025-11-23 22:49:28,677 | train | INFO | New best model at epoch 6 (val_macro_f1=0.1400). Saving checkpoint to experiments\checkpoints\best_model.pt
+2025-11-23 22:50:36,241 | train | INFO | Epoch 007/150 [67.5s] Train: loss=1.9354, acc=0.1637, macroF1=0.1463 | Val: loss=1.9247, acc=0.1845, macroF1=0.1140
+2025-11-23 22:50:36,241 | train | INFO | No improvement in best metric for 1 epoch(s). Best so far: 0.1400 at epoch 6
+2025-11-23 22:51:42,483 | train | INFO | Epoch 008/150 [66.2s] Train: loss=1.9319, acc=0.1716, macroF1=0.1529 | Val: loss=1.9236, acc=0.1581, macroF1=0.1342
+2025-11-23 22:51:42,483 | train | INFO | No improvement in best metric for 2 epoch(s). Best so far: 0.1400 at epoch 6
+2025-11-23 22:52:51,024 | train | INFO | Epoch 009/150 [68.5s] Train: loss=1.9306, acc=0.1791, macroF1=0.1574 | Val: loss=1.9210, acc=0.1941, macroF1=0.1543
+2025-11-23 22:52:51,024 | train | INFO | New best model at epoch 9 (val_macro_f1=0.1543). Saving checkpoint to experiments\checkpoints\best_model.pt
+2025-11-23 22:54:00,154 | train | INFO | Epoch 010/150 [69.1s] Train: loss=1.9263, acc=0.1742, macroF1=0.1550 | Val: loss=1.9141, acc=0.2278, macroF1=0.1415
+2025-11-23 22:54:00,155 | train | INFO | No improvement in best metric for 1 epoch(s). Best so far: 0.1543 at epoch 9
+2025-11-23 22:55:07,814 | train | INFO | Epoch 011/150 [67.7s] Train: loss=1.9255, acc=0.1778, macroF1=0.1615 | Val: loss=1.9126, acc=0.2296, macroF1=0.1499
+2025-11-23 22:55:07,814 | train | INFO | No improvement in best metric for 2 epoch(s). Best so far: 0.1543 at epoch 9
+2025-11-23 22:56:14,164 | train | INFO | Epoch 012/150 [66.3s] Train: loss=1.9253, acc=0.1758, macroF1=0.1564 | Val: loss=1.9085, acc=0.2025, macroF1=0.1377
+2025-11-23 22:56:14,165 | train | INFO | No improvement in best metric for 3 epoch(s). Best so far: 0.1543 at epoch 9
+2025-11-23 22:57:28,369 | train | INFO | Epoch 013/150 [74.2s] Train: loss=1.9211, acc=0.1766, macroF1=0.1545 | Val: loss=1.9259, acc=0.1195, macroF1=0.1003
+2025-11-23 22:57:28,372 | train | INFO | No improvement in best metric for 4 epoch(s). Best so far: 0.1543 at epoch 9
+2025-11-23 22:58:36,014 | train | INFO | Epoch 014/150 [67.6s] Train: loss=1.9208, acc=0.1888, macroF1=0.1629 | Val: loss=1.9094, acc=0.2395, macroF1=0.1605
+2025-11-23 22:58:36,015 | train | INFO | New best model at epoch 14 (val_macro_f1=0.1605). Saving checkpoint to experiments\checkpoints\best_model.pt
+2025-11-23 22:59:42,641 | train | INFO | Epoch 015/150 [66.6s] Train: loss=1.9198, acc=0.1965, macroF1=0.1691 | Val: loss=1.9083, acc=0.2082, macroF1=0.1629
+2025-11-23 22:59:42,641 | train | INFO | New best model at epoch 15 (val_macro_f1=0.1629). Saving checkpoint to experiments\checkpoints\best_model.pt
