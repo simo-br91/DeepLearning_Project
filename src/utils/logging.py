@@ -1,67 +1,34 @@
 # src/utils/logging.py
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
-from typing import Optional
 
 
-def setup_logging(
-    name: str = "fer_project",
-    log_dir: str | Path = "experiments/logs",
-    log_level: int = logging.INFO,
-    reset_handlers: bool = False,
-) -> logging.Logger:
+def setup_logging(log_file: str | Path = "experiments/logs/train.log"):
     """
-    Create and configure a logger that logs to both console and a file.
+    Initialize Python logging with a single file handler + console.
 
-    Parameters
-    ----------
-    name : str
-        Name of the logger (e.g. experiment or module name).
-    log_dir : str | Path
-        Directory where the log file will be written.
-    log_level : int
-        Logging level (e.g. logging.INFO, logging.DEBUG).
-    reset_handlers : bool
-        If True, existing handlers on this logger are removed first.
-
-    Returns
-    -------
-    logging.Logger
-        Configured logger instance.
+    IMPORTANT:
+    - If the user passes "experiments/logs/train.log", we MUST NOT
+      re-prepend "experiments/logs" again.
+    - So we treat log_file as a *full* path.
     """
-    log_dir = Path(log_dir)
-    log_dir.mkdir(parents=True, exist_ok=True)
 
-    logger = logging.getLogger(name)
-    logger.setLevel(log_level)
+    log_file = Path(log_file)
 
-    if reset_handlers:
-        logger.handlers.clear()
+    # Ensure directory exists
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # avoid adding duplicate handlers if called multiple times
-    if not logger.handlers:
-        log_file = log_dir / f"{name}.log"
+    # Basic logging configuration
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, mode="w", encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+    )
 
-        # File handler
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(log_level)
-
-        # Console handler
-        ch = logging.StreamHandler()
-        ch.setLevel(log_level)
-
-        # Format
-        formatter = logging.Formatter(
-            "%(asctime)s | %(name)s | %(levelname)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        logger.addHandler(fh)
-        logger.addHandler(ch)
-
-        logger.debug(f"Logger '{name}' initialized. Log file: {log_file}")
-
-    return logger
+    logging.getLogger().info(f"Logging initialized. Writing to: {log_file}")
