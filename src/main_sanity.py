@@ -1,27 +1,41 @@
 # src/main_sanity.py
 
-from pathlib import Path
+from __future__ import annotations
+
+import torch
 
 from src.utils.config import load_config
-from src.utils.logging import setup_logging
 from src.utils.seed import set_seed
+from src.data.datasets import build_dataloaders
+from src.models.main_cnn import build_model
+from src.utils.logging import setup_logging
 
 
 def main():
-    # 1. Setup logging
-    logger = setup_logging(name="sanity", log_dir="experiments/logs", reset_handlers=True)
+    logger = setup_logging("sanity")
 
-    # 2. Load config
-    cfg_path = Path("configs/main_cnn_template.yaml")
-    cfg = load_config(cfg_path)
-    logger.info(f"Loaded config from: {cfg.path}")
-    logger.info("Config content:\n" + cfg.pretty())
+    cfg = load_config("configs/main_cnn_v1.yaml")
+    logger.info("Loaded config")
 
-    # 3. Set seed
     seed = cfg.get("seed", 42)
     set_seed(seed)
 
-    logger.info("Sanity check completed successfully.")
+    loaders = build_dataloaders(cfg)
+    train_loader = loaders["train"]
+
+    # Build model from config
+    model = build_model(cfg)
+    logger.info("Model:\n%s", model)
+
+    # Grab one batch
+    images, labels = next(iter(train_loader))
+    logger.info("Batch images shape: %s", tuple(images.shape))
+    logger.info("Batch labels shape: %s", tuple(labels.shape))
+
+    # Forward pass
+    with torch.no_grad():
+        logits = model(images)
+    logger.info("Logits shape: %s", tuple(logits.shape))
 
 
 if __name__ == "__main__":
