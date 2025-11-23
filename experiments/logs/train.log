@@ -1,9 +1,8 @@
-2025-11-23 22:11:44,300 | root | INFO | Logging initialized. Writing to: experiments\logs\train.log
-2025-11-23 22:11:44,304 | train | INFO | Loaded config from: configs/main_cnn_template.yaml
-2025-11-23 22:11:44,304 | train | INFO | Config content:
+2025-11-23 22:42:01,378 | root | INFO | Logging initialized. Writing to: experiments\logs\train.log
+2025-11-23 22:42:01,383 | train | INFO | Loaded config from: configs/main_cnn_template.yaml
+2025-11-23 22:42:01,383 | train | INFO | Config content:
 Config(path=WindowsPath('configs/main_cnn_template.yaml'), data={'seed': 42, 'dataset': {'name': 'RAFDB', 'root': 'data/processed', 'splits_dir': 'data/splits', 'image_size': 128, 'channels': 1, 'train_split': 'train.csv', 'val_split': 'val.csv', 'test_split': 'test.csv'}, 'preprocessing': {'normalize': {'mean': [0.5], 'std': [0.5]}, 'use_hist_equalization': False}, 'augmentation': {'horizontal_flip': True, 'rotation_deg': 15, 'translate': 0.1, 'brightness': 0.2, 'contrast': 0.2, 'saturation': 0.0, 'hue': 0.0, 'random_erasing': True, 'random_erasing_p': 0.5, 'random_erasing_scale': [0.02, 0.33], 'random_erasing_ratio': [0.3, 3.3]}, 'training': {'batch_size': 64, 'num_epochs': 150, 'num_workers': 4, 'pin_memory': True, 'early_stopping_patience': 15}, 'optimizer': {'name': 'adamw', 'lr': 0.001, 'weight_decay': 0.0001, 'momentum': 0.9}, 'scheduler': {'name': 'cosine_annealing', 'T_max': 50, 'eta_min': 1e-05}, 'logging': {'log_dir': 'experiments/logs', 'checkpoint_dir': 'experiments/checkpoints', 'save_best_metric': 'val_macro_f1', 'tensorboard': True}})
-2025-11-23 22:11:44,305 | src.utils.seed | INFO | Setting global seed to 42
-2025-11-23 22:11:44,307 | src.utils.seed | INFO | PyTorch cuDNN set to deterministic mode
-2025-11-23 22:11:44,307 | train | INFO | Seed set to 42
-2025-11-23 22:11:44,308 | train | INFO | Using device: cpu
-2025-11-23 22:12:22,783 | train | INFO | Class counts: [4338, 6292, 4254, 2801, 3585, 383, 3467]
+2025-11-23 22:42:01,383 | src.utils.seed | INFO | Setting global seed to 42
+2025-11-23 22:42:01,388 | src.utils.seed | INFO | PyTorch cuDNN set to deterministic mode
+2025-11-23 22:42:01,388 | train | INFO | Seed set to 42
+2025-11-23 22:42:01,388 | train | INFO | Using device: cuda

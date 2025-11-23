@@ -3,273 +3,284 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Tuple, List
 
 import logging
+import time
 
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+from sklearn.metrics import f1_score
 
-from sklearn.metrics import f1_score, accuracy_score
-
-from src.data.datasets import build_dataloaders, EMOTION_LABELS
-from src.models.main_cnn import MainCNN
-from src.training.losses import build_loss
-from src.training.schedulers import build_scheduler
+from src.data.datasets import build_dataloaders
+from src.models.main_cnn import build_model
+from src.utils.config import Config
 
 logger = logging.getLogger("train")
 
 
-def _count_class_frequencies(dataset) -> List[int]:
+def _compute_class_counts(train_loader: DataLoader) -> List[int]:
     """
-    Count label frequencies from a RAFDBDataset instance.
-    Assumes each sample is (img, label_idx).
+    Count how many samples per class are present in the training set.
     """
-    counts = np.zeros(len(EMOTION_LABELS), dtype=np.int64)
-    for _, label in dataset:
-        counts[int(label)] += 1
-    return counts.tolist()
+    logger.info("Computing class counts for training set...")
+    class_counts: Dict[int, int] = {}
+    for _, labels in train_loader:
+        labels = labels.cpu().numpy()
+        for y in labels:
+            class_counts[int(y)] = class_counts.get(int(y), 0) + 1
+
+    # Convert to sorted list by class index 0..K-1
+    max_class = max(class_counts.keys())
+    counts_list = [class_counts.get(i, 0) for i in range(max_class + 1)]
+    logger.info(f"Class counts: {counts_list}")
+    return counts_list
 
 
-def train_one_epoch(
+def _build_class_weights(class_counts: List[int], device: torch.device) -> torch.Tensor:
+    """
+    Build inverse-frequency class weights:
+        w_i = N / (K * n_i)
+    """
+    counts = np.array(class_counts, dtype=np.float32)
+    N = counts.sum()
+    K = len(counts)
+    # Avoid division by zero for extremely rare / missing classes
+    counts[counts == 0] = 1.0
+    weights = N / (K * counts)
+    weights_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
+    logger.info(f"Class weights (inverse frequency): {weights.tolist()}")
+    return weights_tensor
+
+
+def _build_optimizer(model: nn.Module, optim_cfg: Dict[str, Any]) -> torch.optim.Optimizer:
+    name = optim_cfg.get("name", "adamw").lower()
+    lr = float(optim_cfg.get("lr", 1e-3))
+    weight_decay = float(optim_cfg.get("weight_decay", 1e-4))
+    momentum = float(optim_cfg.get("momentum", 0.9))
+
+    if name == "adamw":
+        logger.info(f"Using AdamW optimizer (lr={lr}, weight_decay={weight_decay})")
+        return torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif name == "adam":
+        logger.info(f"Using Adam optimizer (lr={lr}, weight_decay={weight_decay})")
+        return torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    elif name == "sgd":
+        logger.info(
+            f"Using SGD optimizer (lr={lr}, momentum={momentum}, weight_decay={weight_decay})"
+        )
+        return torch.optim.SGD(
+            model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
+        )
+    else:
+        raise ValueError(f"Unknown optimizer name: {name}")
+
+
+def _build_scheduler(
+    optimizer: torch.optim.Optimizer, sched_cfg: Dict[str, Any]
+) -> torch.optim.lr_scheduler._LRScheduler | None:
+    name = sched_cfg.get("name", "none")
+    name = name.lower() if isinstance(name, str) else "none"
+
+    if name in ("none", "null", "", None):
+        logger.info("No LR scheduler will be used.")
+        return None
+
+    if name == "cosine_annealing":
+        T_max = int(sched_cfg.get("T_max", 50))
+        eta_min = float(sched_cfg.get("eta_min", 1e-5))
+        logger.info(
+            f"Using CosineAnnealingLR scheduler (T_max={T_max}, eta_min={eta_min})"
+        )
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=T_max, eta_min=eta_min
+        )
+
+    # Add other schedulers here if you want (ReduceLROnPlateau, OneCycleLR, etc.)
+    logger.warning(f"Unknown scheduler name: {name}. No scheduler will be used.")
+    return None
+
+
+def _step_epoch(
     model: nn.Module,
-    loader,
-    optimizer: torch.optim.Optimizer,
+    loader: DataLoader,
     criterion: nn.Module,
+    optimizer: torch.optim.Optimizer | None,
     device: torch.device,
-    epoch: int,
-) -> Dict[str, float]:
-    model.train()
+    train: bool = True,
+) -> Tuple[float, float, float]:
+    """
+    Run one epoch on the given loader.
+
+    Returns:
+      (avg_loss, accuracy, macro_f1)
+    """
+    if train:
+        model.train()
+    else:
+        model.eval()
+
     running_loss = 0.0
     all_preds: List[int] = []
-    all_targets: List[int] = []
+    all_labels: List[int] = []
 
-    for step, (images, labels) in enumerate(loader):
-        images = images.to(device, non_blocking=True)
+    for inputs, labels in loader:
+        inputs = inputs.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
 
-        optimizer.zero_grad()
-        logits = model(images)
-        loss = criterion(logits, labels)
-        loss.backward()
-        optimizer.step()
+        if train:
+            optimizer.zero_grad()  # type: ignore
 
-        running_loss += loss.item() * images.size(0)
+        with torch.set_grad_enabled(train):
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
 
-        preds = logits.argmax(dim=1).detach().cpu().numpy()
-        targets = labels.detach().cpu().numpy()
-        all_preds.extend(preds.tolist())
-        all_targets.extend(targets.tolist())
+            if train:
+                loss.backward()
+                optimizer.step()  # type: ignore
 
-    epoch_loss = running_loss / len(loader.dataset)
-    acc = accuracy_score(all_targets, all_preds)
-    macro_f1 = f1_score(all_targets, all_preds, average="macro")
+        running_loss += loss.item() * inputs.size(0)
 
-    return {
-        "loss": float(epoch_loss),
-        "accuracy": float(acc),
-        "macro_f1": float(macro_f1),
-    }
+        preds = outputs.argmax(dim=1)
+        all_preds.extend(preds.detach().cpu().numpy().tolist())
+        all_labels.extend(labels.detach().cpu().numpy().tolist())
 
+    dataset_size = len(loader.dataset)
+    avg_loss = running_loss / max(dataset_size, 1)
 
-def evaluate(
-    model: nn.Module,
-    loader,
-    criterion: Optional[nn.Module],
-    device: torch.device,
-) -> Dict[str, Any]:
-    model.eval()
-    running_loss = 0.0
-    all_preds: List[int] = []
-    all_targets: List[int] = []
+    all_preds_arr = np.array(all_preds)
+    all_labels_arr = np.array(all_labels)
 
-    with torch.no_grad():
-        for images, labels in loader:
-            images = images.to(device, non_blocking=True)
-            labels = labels.to(device, non_blocking=True)
+    accuracy = (all_preds_arr == all_labels_arr).mean().item()
+    macro_f1 = f1_score(all_labels_arr, all_preds_arr, average="macro")
 
-            logits = model(images)
-            if criterion is not None:
-                loss = criterion(logits, labels)
-                running_loss += loss.item() * images.size(0)
-
-            preds = logits.argmax(dim=1).detach().cpu().numpy()
-            targets = labels.detach().cpu().numpy()
-            all_preds.extend(preds.tolist())
-            all_targets.extend(targets.tolist())
-
-    if len(all_targets) == 0:
-        return {"loss": 0.0, "accuracy": 0.0, "macro_f1": 0.0}
-
-    avg_loss = (
-        running_loss / len(loader.dataset) if criterion is not None else 0.0
-    )
-    acc = accuracy_score(all_targets, all_preds)
-    macro_f1 = f1_score(all_targets, all_preds, average="macro")
-
-    # per-class F1 (useful later)
-    per_class_f1 = f1_score(
-        all_targets,
-        all_preds,
-        average=None,
-        labels=list(range(len(EMOTION_LABELS))),
-        zero_division=0,
-    ).tolist()
-
-    return {
-        "loss": float(avg_loss),
-        "accuracy": float(acc),
-        "macro_f1": float(macro_f1),
-        "per_class_f1": per_class_f1,
-    }
+    return avg_loss, accuracy, macro_f1
 
 
-def train_model(cfg: Dict[str, Any]) -> None:
+def train_model(cfg: Config) -> None:
     """
-    High-level training function used by main_train.py.
+    Main training entry point. Expects a Config object.
     """
+    cfg_dict = cfg.data  # plain dict
+    dataset_cfg = cfg_dict.get("dataset", {})
+    training_cfg = cfg_dict.get("training", {})
+    optim_cfg = cfg_dict.get("optimizer", {})
+    sched_cfg = cfg_dict.get("scheduler", {})
+    logging_cfg = cfg_dict.get("logging", {})
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # ---------- Data ----------
-    loaders = build_dataloaders(cfg)
+    # ------------------------------------------------------------------
+    # 1. Data loaders
+    # ------------------------------------------------------------------
+    loaders = build_dataloaders(cfg_dict)
     train_loader = loaders["train"]
     val_loader = loaders["val"]
 
-    # Count class frequencies for weighted loss
-    class_counts = _count_class_frequencies(train_loader.dataset)
-    logger.info(f"Class counts: {class_counts}")
+    # ------------------------------------------------------------------
+    # 2. Class weights (for imbalance)
+    # ------------------------------------------------------------------
+    class_counts = _compute_class_counts(train_loader)
+    class_weights = _build_class_weights(class_counts, device=device)
 
-    num_classes = len(EMOTION_LABELS)
+    # ------------------------------------------------------------------
+    # 3. Model, loss, optimizer, scheduler
+    # ------------------------------------------------------------------
+    model = build_model(cfg_dict).to(device)
+    logger.info(f"Model built:\n{model}")
 
-    # ---------- Model ----------
-    in_channels = int(cfg["dataset"].get("channels", 1))
-    model = MainCNN(
-        in_channels=in_channels,
-        num_classes=num_classes,
-        base_channels=cfg.get("model", {}).get("base_channels", 32),
-        num_blocks=cfg.get("model", {}).get("num_blocks", 4),
-        use_se=cfg.get("model", {}).get("use_se", True),
-        activation=cfg.get("model", {}).get("activation", "elu"),
-        dropout_p=cfg.get("model", {}).get("dropout_p", 0.25),
-    )
-    model.to(device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
 
-    # ---------- Loss ----------
-    loss_cfg = cfg.get("loss", None)
-    criterion = build_loss(
-        num_classes=num_classes,
-        loss_cfg=loss_cfg,
-        class_counts=class_counts,
-    )
+    optimizer = _build_optimizer(model, optim_cfg)
+    scheduler = _build_scheduler(optimizer, sched_cfg)
 
-    # ---------- Optimizer ----------
-    opt_cfg = cfg.get("optimizer", {})
-    opt_name = opt_cfg.get("name", "adamw").lower()
-    lr = float(opt_cfg.get("lr", 1e-3))
-    weight_decay = float(opt_cfg.get("weight_decay", 1e-4))
-    momentum = float(opt_cfg.get("momentum", 0.9))
-
-    if opt_name == "sgd":
-        optimizer = torch.optim.SGD(
-            model.parameters(),
-            lr=lr,
-            momentum=momentum,
-            weight_decay=weight_decay,
-        )
-    elif opt_name == "adam":
-        optimizer = torch.optim.Adam(
-            model.parameters(),
-            lr=lr,
-            weight_decay=weight_decay,
-        )
-    else:  # "adamw" or default
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=lr,
-            weight_decay=weight_decay,
-        )
-
-    num_epochs = int(cfg["training"]["num_epochs"])
-    steps_per_epoch = max(1, len(train_loader))
-    scheduler_cfg = cfg.get("scheduler", None)
-    scheduler = build_scheduler(optimizer, scheduler_cfg, num_epochs, steps_per_epoch)
-
-    # ---------- Logging ----------
-    log_cfg = cfg.get("logging", {})
-    log_dir = Path(log_cfg.get("log_dir", "experiments/logs"))
-    ckpt_dir = Path(log_cfg.get("checkpoint_dir", "experiments/checkpoints"))
+    # ------------------------------------------------------------------
+    # 4. Logging / checkpoints
+    # ------------------------------------------------------------------
+    log_dir = Path(logging_cfg.get("log_dir", "experiments/logs"))
+    ckpt_dir = Path(logging_cfg.get("checkpoint_dir", "experiments/checkpoints"))
     log_dir.mkdir(parents=True, exist_ok=True)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
-    use_tb = bool(log_cfg.get("tensorboard", True))
-    writer = None
+    use_tb = bool(logging_cfg.get("tensorboard", True))
+    writer: SummaryWriter | None = None
     if use_tb:
-        writer = SummaryWriter(log_dir=str(log_dir))
+        writer = SummaryWriter(log_dir=str(log_dir / "tb"))
 
-    early_stopping_patience = int(
-        cfg["training"].get("early_stopping_patience", 15)
-    )
-    best_metric_name = log_cfg.get("save_best_metric", "val_macro_f1")
+    num_epochs = int(training_cfg.get("num_epochs", 100))
+    early_stopping_patience = int(training_cfg.get("early_stopping_patience", 15))
 
     best_val_metric = -float("inf")
     best_epoch = -1
     epochs_no_improve = 0
 
-    # ---------- Training loop ----------
+    save_best_metric_name = logging_cfg.get("save_best_metric", "val_macro_f1")
+
+    logger.info(
+        f"Starting training for {num_epochs} epochs. "
+        f"Early stopping patience = {early_stopping_patience}, "
+        f"best metric = {save_best_metric_name}"
+    )
+
+    # ------------------------------------------------------------------
+    # 5. Epoch loop
+    # ------------------------------------------------------------------
     for epoch in range(1, num_epochs + 1):
-        logger.info(f"Epoch {epoch}/{num_epochs}")
+        epoch_start = time.time()
 
-        train_metrics = train_one_epoch(
-            model=model,
-            loader=train_loader,
-            optimizer=optimizer,
-            criterion=criterion,
-            device=device,
-            epoch=epoch,
-        )
-        val_metrics = evaluate(
-            model=model,
-            loader=val_loader,
-            criterion=criterion,
-            device=device,
+        # Train
+        train_loss, train_acc, train_macro_f1 = _step_epoch(
+            model, train_loader, criterion, optimizer, device, train=True
         )
 
-        logger.info(
-            f"Train - loss: {train_metrics['loss']:.4f}, "
-            f"acc: {train_metrics['accuracy']:.4f}, "
-            f"macro_f1: {train_metrics['macro_f1']:.4f}"
-        )
-        logger.info(
-            f"Val   - loss: {val_metrics['loss']:.4f}, "
-            f"acc: {val_metrics['accuracy']:.4f}, "
-            f"macro_f1: {val_metrics['macro_f1']:.4f}"
+        # Validate
+        val_loss, val_acc, val_macro_f1 = _step_epoch(
+            model, val_loader, criterion, optimizer=None, device=device, train=False
         )
 
-        # TensorBoard
-        if writer is not None:
-            writer.add_scalar("train/loss", train_metrics["loss"], epoch)
-            writer.add_scalar("train/accuracy", train_metrics["accuracy"], epoch)
-            writer.add_scalar("train/macro_f1", train_metrics["macro_f1"], epoch)
-            writer.add_scalar("val/loss", val_metrics["loss"], epoch)
-            writer.add_scalar("val/accuracy", val_metrics["accuracy"], epoch)
-            writer.add_scalar("val/macro_f1", val_metrics["macro_f1"], epoch)
-
-        # Scheduler step
+        # Step LR scheduler (if not ReduceLROnPlateau-style)
         if scheduler is not None:
-            from torch.optim.lr_scheduler import ReduceLROnPlateau
+            # For simplicity, we assume schedulers that step every epoch
+            scheduler.step()
 
-            if isinstance(scheduler, ReduceLROnPlateau):
-                scheduler.step(val_metrics["macro_f1"])
-            else:
-                scheduler.step()
+        epoch_time = time.time() - epoch_start
 
-        # Early stopping logic
-        current_metric = val_metrics.get("macro_f1", 0.0)
-        if best_metric_name == "val_accuracy":
-            current_metric = val_metrics.get("accuracy", 0.0)
+        logger.info(
+            f"Epoch {epoch:03d}/{num_epochs:03d} "
+            f"[{epoch_time:.1f}s] "
+            f"Train: loss={train_loss:.4f}, acc={train_acc:.4f}, macroF1={train_macro_f1:.4f} | "
+            f"Val: loss={val_loss:.4f}, acc={val_acc:.4f}, macroF1={val_macro_f1:.4f}"
+        )
+
+        if writer is not None:
+            writer.add_scalar("Loss/train", train_loss, epoch)
+            writer.add_scalar("Loss/val", val_loss, epoch)
+            writer.add_scalar("Acc/train", train_acc, epoch)
+            writer.add_scalar("Acc/val", val_acc, epoch)
+            writer.add_scalar("MacroF1/train", train_macro_f1, epoch)
+            writer.add_scalar("MacroF1/val", val_macro_f1, epoch)
+            current_lr = optimizer.param_groups[0]["lr"]
+            writer.add_scalar("LR", current_lr, epoch)
+
+        # ------------------------------------------------------------------
+        # 6. Check best metric & early stopping
+        # ------------------------------------------------------------------
+        if save_best_metric_name == "val_macro_f1":
+            current_metric = val_macro_f1
+        elif save_best_metric_name == "val_acc":
+            current_metric = val_acc
+        elif save_best_metric_name == "val_loss":
+            current_metric = -val_loss  # because lower is better
+        else:
+            logger.warning(
+                f"Unknown save_best_metric: {save_best_metric_name}, "
+                f"defaulting to val_macro_f1."
+            )
+            current_metric = val_macro_f1
 
         if current_metric > best_val_metric:
             best_val_metric = current_metric
@@ -277,36 +288,35 @@ def train_model(cfg: Dict[str, Any]) -> None:
             epochs_no_improve = 0
 
             ckpt_path = ckpt_dir / "best_model.pt"
+            logger.info(
+                f"New best model at epoch {epoch} "
+                f"({save_best_metric_name}={current_metric:.4f}). "
+                f"Saving checkpoint to {ckpt_path}"
+            )
             torch.save(
                 {
                     "epoch": epoch,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "best_val_metric": best_val_metric,
-                    "config": cfg,
+                    "model_state": model.state_dict(),
+                    "optimizer_state": optimizer.state_dict(),
+                    "best_metric": best_val_metric,
+                    "class_counts": class_counts,
+                    "config": cfg_dict,
                 },
                 ckpt_path,
-            )
-            logger.info(
-                f"New best model (metric={best_val_metric:.4f}) saved to {ckpt_path}"
             )
         else:
             epochs_no_improve += 1
             logger.info(
-                f"No improvement for {epochs_no_improve} epoch(s) "
-                f"(best={best_val_metric:.4f} at epoch {best_epoch})"
+                f"No improvement in best metric for {epochs_no_improve} epoch(s). "
+                f"Best so far: {best_val_metric:.4f} at epoch {best_epoch}"
             )
 
         if epochs_no_improve >= early_stopping_patience:
             logger.info(
-                f"Early stopping triggered after {epoch} epochs "
-                f"(best epoch = {best_epoch})"
+                f"Early stopping triggered after {epoch} epochs. "
+                f"Best epoch: {best_epoch} with {save_best_metric_name}={best_val_metric:.4f}"
             )
             break
 
     if writer is not None:
         writer.close()
-
-    logger.info(
-        f"Training finished. Best {best_metric_name}={best_val_metric:.4f} at epoch {best_epoch}"
-    )

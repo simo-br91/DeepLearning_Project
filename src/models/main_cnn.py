@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Literal
+from typing import Any, Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -120,7 +120,7 @@ class ConvBlock(nn.Module):
         else:
             self.res_proj = None
 
-        # Optional attention (SE / CBAM)
+        # Optional attention (SE / CBAM / none)
         self.attention = build_attention(
             channels=out_channels,
             attention_type=attention_type,
@@ -129,7 +129,9 @@ class ConvBlock(nn.Module):
         )
 
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.dropout = nn.Dropout2d(p=dropout) if dropout and dropout > 0.0 else nn.Identity()
+        self.dropout = (
+            nn.Dropout2d(p=dropout) if dropout and dropout > 0.0 else nn.Identity()
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
@@ -175,6 +177,7 @@ class MainCNN(nn.Module):
         dropout_block: float = 0.25,
         hidden_dim: int = 256,
         dropout_head: float = 0.4,
+        use_se: Optional[bool] = None,  # NEW: for compatibility with train_model(...)
     ):
         super().__init__()
 
@@ -182,6 +185,10 @@ class MainCNN(nn.Module):
 
         self.in_channels = in_channels
         self.num_classes = num_classes
+
+        # If use_se is explicitly given, override attention_type
+        if use_se is not None:
+            attention_type = "se" if use_se else "none"
 
         blocks = []
         channels_in = in_channels
@@ -195,7 +202,8 @@ class MainCNN(nn.Module):
                 activation=activation,
                 dropout=dropout_block,
                 use_residual=use_residual,
-                attention_type=attention_type if i >= 1 else "none",  # e.g. attention only from block 2+
+                # e.g. attention only from block 2+:
+                attention_type=attention_type if i >= 1 else "none",
             )
             blocks.append(block)
             channels_in = channels_out
@@ -220,14 +228,20 @@ class MainCNN(nn.Module):
         for m in self.modules():
             if isinstance(m, (nn.Conv2d, DepthwiseSeparableConv2d)):
                 if isinstance(m, DepthwiseSeparableConv2d):
-                    nn.init.kaiming_normal_(m.depthwise.weight, mode="fan_out", nonlinearity="relu")
+                    nn.init.kaiming_normal_(
+                        m.depthwise.weight, mode="fan_out", nonlinearity="relu"
+                    )
                     if m.depthwise.bias is not None:
                         nn.init.zeros_(m.depthwise.bias)
-                    nn.init.kaiming_normal_(m.pointwise.weight, mode="fan_out", nonlinearity="relu")
+                    nn.init.kaiming_normal_(
+                        m.pointwise.weight, mode="fan_out", nonlinearity="relu"
+                    )
                     if m.pointwise.bias is not None:
                         nn.init.zeros_(m.pointwise.bias)
                 else:
-                    nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                    nn.init.kaiming_normal_(
+                        m.weight, mode="fan_out", nonlinearity="relu"
+                    )
                     if m.bias is not None:
                         nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
@@ -267,6 +281,7 @@ def build_model(cfg: Dict[str, Any]) -> nn.Module:
     dropout_block = float(model_cfg.get("dropout_block", 0.25))
     hidden_dim = int(model_cfg.get("hidden_dim", 256))
     dropout_head = float(model_cfg.get("dropout_head", 0.4))
+    use_se = model_cfg.get("use_se", None)  # optional in config
 
     model = MainCNN(
         in_channels=in_channels,
@@ -280,5 +295,6 @@ def build_model(cfg: Dict[str, Any]) -> nn.Module:
         dropout_block=dropout_block,
         hidden_dim=hidden_dim,
         dropout_head=dropout_head,
+        use_se=use_se,
     )
     return model
