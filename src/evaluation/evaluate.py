@@ -44,9 +44,7 @@ def load_checkpoint(
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
     
     logger.info(f"Loading checkpoint from: {checkpoint_path}")
-    
-    # MODIFIÉ : Ajouter weights_only=False pour compatibilité
-    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
     
     model.load_state_dict(checkpoint["model_state"])
     logger.info(f"Model weights restored from epoch {checkpoint.get('epoch', 'unknown')}")

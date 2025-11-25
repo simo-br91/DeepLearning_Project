@@ -10,3 +10,5 @@ tensorboard==2.18.0
 pyyaml==6.0.2
 
 mediapipe==0.10.14
+
+opencv-python==4.10.0.84
