@@ -166,14 +166,6 @@ def main():
     if not args.skip_gradcam:
         logger.info(f"  🔥 Grad-CAM visualizations: {gradcam_dir}/")
     
-    logger.info("\n" + "="*80)
-    logger.info("Next steps:")
-    logger.info("  1. Review metrics in CSV files")
-    logger.info("  2. Examine confusion matrices for error patterns")
-    logger.info("  3. Inspect Grad-CAM visualizations for model interpretability")
-    logger.info("  4. Use visualization notebook for plots and analysis")
-    logger.info("="*80 + "\n")
-
 
 if __name__ == "__main__":
     main()
